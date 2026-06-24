@@ -8,8 +8,8 @@ Research and implementation workspace for a glTF packaging format that supports:
 
 ## Current Inputs
 
-- Existing multi-object and multi-DRM implementation: `/data3/isyang/Workspace/Gaussian_glTF`
-- Scalable GS reference outputs and SHIN code notes: `reference/`
+- Existing multi-object and multi-DRM implementation
+- Scalable GS reference outputs and SHIN code notes
 
 ## Repository-Local Code
 
