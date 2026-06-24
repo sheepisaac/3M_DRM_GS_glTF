@@ -1,0 +1,68 @@
+{
+  "objects": [
+    {
+      "name": "tango_duo",
+      "transform": {
+        "translation": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "layers": [
+        {
+          "id": "tango_duo_base",
+          "role": "base",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/tango_duo_base.ply",
+          "dependsOn": [],
+          "composition": "replace",
+          "drmPolicy": null
+        },
+        {
+          "id": "tango_duo_e1",
+          "role": "enhancement",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/tango_duo_e1.ply",
+          "dependsOn": ["tango_duo_base"],
+          "composition": "additive",
+          "drmPolicy": null
+        },
+        {
+          "id": "tango_duo_e2",
+          "role": "enhancement",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/tango_duo_e2.ply",
+          "dependsOn": ["tango_duo_base", "tango_duo_e1"],
+          "composition": "additive",
+          "drmPolicy": {
+            "system": "playready",
+            "keyId": "22222222222222222222222222222222",
+            "key": "playready_el2_key",
+            "licenseUrl": "https://license.example.invalid/playready/el2",
+            "attributes": ["sh", "scale"]
+          }
+        },
+        {
+          "id": "tango_duo_e3",
+          "role": "enhancement",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/tango_duo_e3.ply",
+          "dependsOn": ["tango_duo_base", "tango_duo_e1", "tango_duo_e2"],
+          "composition": "additive",
+          "drmPolicy": {
+            "systems": [
+              {
+                "system": "playready",
+                "keyId": "33333333333333333333333333333333",
+                "key": "playready_el3_key",
+                "licenseUrl": "https://license.example.invalid/playready/el3"
+              },
+              {
+                "system": "widevine",
+                "keyId": "44444444444444444444444444444444",
+                "key": "widevine_el3_key",
+                "licenseUrl": "https://license.example.invalid/widevine/el3"
+              }
+            ],
+            "attributes": ["sh", "scale"]
+          }
+        }
+      ]
+    }
+  ]
+}

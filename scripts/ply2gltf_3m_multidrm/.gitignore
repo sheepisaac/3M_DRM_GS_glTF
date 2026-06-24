@@ -1,0 +1,5 @@
+build/
+*.glb
+*.gltf
+*.bin
+*.ply

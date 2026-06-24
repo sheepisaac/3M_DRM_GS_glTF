@@ -1,0 +1,132 @@
+{
+  "objects": [
+    {
+      "name": "tango_duo",
+      "transform": {
+        "translation": [-1.2, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "layers": [
+        {
+          "id": "tango_duo_base",
+          "role": "base",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/tango_duo_base.ply",
+          "dependsOn": [],
+          "composition": "replace",
+          "drmPolicy": null
+        },
+        {
+          "id": "tango_duo_e1",
+          "role": "enhancement",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/tango_duo_e1.ply",
+          "dependsOn": ["tango_duo_base"],
+          "composition": "additive",
+          "drmPolicy": null
+        },
+        {
+          "id": "tango_duo_e2",
+          "role": "enhancement",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/tango_duo_e2.ply",
+          "dependsOn": ["tango_duo_base", "tango_duo_e1"],
+          "composition": "additive",
+          "drmPolicy": {
+            "system": "playready",
+            "keyId": "12222222222222222222222222222222",
+            "key": "tango_playready_el2_key",
+            "licenseUrl": "https://license.example.invalid/playready/tango/el2",
+            "attributes": ["sh", "scale"]
+          }
+        },
+        {
+          "id": "tango_duo_e3",
+          "role": "enhancement",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/tango_duo_e3.ply",
+          "dependsOn": ["tango_duo_base", "tango_duo_e1", "tango_duo_e2"],
+          "composition": "additive",
+          "drmPolicy": {
+            "systems": [
+              {
+                "system": "playready",
+                "keyId": "13333333333333333333333333333333",
+                "key": "tango_playready_el3_key",
+                "licenseUrl": "https://license.example.invalid/playready/tango/el3"
+              },
+              {
+                "system": "widevine",
+                "keyId": "14444444444444444444444444444444",
+                "key": "tango_widevine_el3_key",
+                "licenseUrl": "https://license.example.invalid/widevine/tango/el3"
+              }
+            ],
+            "attributes": ["sh", "scale"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "cricket_player",
+      "transform": {
+        "translation": [1.2, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "layers": [
+        {
+          "id": "cricket_player_base",
+          "role": "base",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/cricket_player_base.ply",
+          "dependsOn": [],
+          "composition": "replace",
+          "drmPolicy": null
+        },
+        {
+          "id": "cricket_player_e1",
+          "role": "enhancement",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/cricket_player_e1.ply",
+          "dependsOn": ["cricket_player_base"],
+          "composition": "additive",
+          "drmPolicy": null
+        },
+        {
+          "id": "cricket_player_e2",
+          "role": "enhancement",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/cricket_player_e2.ply",
+          "dependsOn": ["cricket_player_base", "cricket_player_e1"],
+          "composition": "additive",
+          "drmPolicy": {
+            "system": "playready",
+            "keyId": "22222222222222222222222222222222",
+            "key": "cricket_playready_el2_key",
+            "licenseUrl": "https://license.example.invalid/playready/cricket/el2",
+            "attributes": ["sh", "scale"]
+          }
+        },
+        {
+          "id": "cricket_player_e3",
+          "role": "enhancement",
+          "ply": "/data3/isyang/Workspace/3M_DRM_GS_glTF/output/layered_play/cricket_player_e3.ply",
+          "dependsOn": ["cricket_player_base", "cricket_player_e1", "cricket_player_e2"],
+          "composition": "additive",
+          "drmPolicy": {
+            "systems": [
+              {
+                "system": "playready",
+                "keyId": "23333333333333333333333333333333",
+                "key": "cricket_playready_el3_key",
+                "licenseUrl": "https://license.example.invalid/playready/cricket/el3"
+              },
+              {
+                "system": "widevine",
+                "keyId": "24444444444444444444444444444444",
+                "key": "cricket_widevine_el3_key",
+                "licenseUrl": "https://license.example.invalid/widevine/cricket/el3"
+              }
+            ],
+            "attributes": ["sh", "scale"]
+          }
+        }
+      ]
+    }
+  ]
+}

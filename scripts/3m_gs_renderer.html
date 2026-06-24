@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>3M DRM GS glTF Renderer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #101114;
+      color: #f2f4f8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) 1fr;
+      background: #101114;
+    }
+    aside {
+      border-right: 1px solid #2a2e36;
+      padding: 16px;
+      overflow: auto;
+      background: #17191f;
+    }
+    main { position: relative; min-width: 0; }
+    canvas { display: block; width: 100%; height: 100%; }
+    h1 {
+      font-size: 18px;
+      line-height: 1.2;
+      margin: 0 0 14px;
+      font-weight: 700;
+    }
+    h2 {
+      font-size: 13px;
+      line-height: 1.25;
+      margin: 18px 0 8px;
+      color: #c8d0dc;
+      font-weight: 700;
+    }
+    label, button, input { font: inherit; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .file {
+      width: 100%;
+      min-height: 36px;
+      padding: 8px;
+      border: 1px solid #343946;
+      border-radius: 6px;
+      background: #20232b;
+      color: #f2f4f8;
+    }
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    button {
+      min-height: 34px;
+      padding: 7px 10px;
+      border: 1px solid #3a4050;
+      border-radius: 6px;
+      background: #242936;
+      color: #f2f4f8;
+      cursor: pointer;
+    }
+    button:hover { background: #2b3140; }
+    button:disabled { opacity: .45; cursor: default; }
+    .status {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 6px;
+      background: #20232b;
+      border: 1px solid #303541;
+      color: #d8dee9;
+      min-height: 42px;
+      white-space: pre-wrap;
+      font-size: 12px;
+    }
+    .object {
+      margin: 10px 0;
+      border: 1px solid #303541;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #1c1f27;
+    }
+    .object-head {
+      padding: 9px 10px;
+      background: #222733;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .object-transform {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      padding: 8px 10px;
+      border-top: 1px solid #303541;
+      background: #1c1f27;
+    }
+    .axis-control {
+      display: grid;
+      grid-template-columns: 12px minmax(0, 1fr);
+      gap: 4px;
+      align-items: center;
+      color: #9faabd;
+      font-size: 11px;
+    }
+    .axis-control input {
+      width: 100%;
+      min-width: 0;
+      height: 28px;
+      padding: 4px 6px;
+      border: 1px solid #343946;
+      border-radius: 4px;
+      background: #15171c;
+      color: #f2f4f8;
+    }
+    .layer {
+      min-height: 36px;
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 10px;
+      border-top: 1px solid #303541;
+      font-size: 12px;
+    }
+    .layer input { width: 16px; height: 16px; }
+    .meta { color: #9faabd; font-size: 11px; }
+    .badge {
+      border: 1px solid #475168;
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: 11px;
+      color: #d8dee9;
+      background: #242936;
+    }
+    .badge.locked {
+      border-color: #7a4b50;
+      color: #ffb9c0;
+      background: #352127;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 90px;
+      gap: 8px;
+      align-items: center;
+      margin-top: 10px;
+      font-size: 12px;
+      color: #c8d0dc;
+    }
+    .select {
+      width: 100%;
+      min-height: 34px;
+      border: 1px solid #343946;
+      border-radius: 6px;
+      background: #20232b;
+      color: #f2f4f8;
+      padding: 6px 8px;
+    }
+    input[type="range"] { width: 100%; }
+    @media (max-width: 760px) {
+      body { grid-template-columns: 1fr; grid-template-rows: 44vh 56vh; }
+      aside { order: 2; border-right: 0; border-top: 1px solid #2a2e36; }
+      main { order: 1; }
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>3M GS glTF Renderer</h1>
+    <input id="fileInput" class="file" type="file" accept=".glb,.gltf" />
+    <div class="toolbar">
+      <button id="baseOnlyBtn" disabled>Base Only</button>
+      <button id="allPlainBtn" disabled>All Plain</button>
+      <button id="unlockBtn" disabled>Unlock DRM</button>
+      <button id="fitBtn" disabled>Fit View</button>
+      <button id="arrangeBtn" disabled>Arrange Side by Side</button>
+    </div>
+    <div class="split">
+      <span>Splat Size</span>
+      <input id="pointSize" type="range" min="0.01" max="1.50" step="0.01" value="0.15" />
+    </div>
+    <h2>Render Mode</h2>
+    <select id="renderMode" class="select">
+      <option value="gaussian" selected>Gaussian Ellipse</option>
+      <option value="points">Point Cloud</option>
+    </select>
+    <div id="status" class="status">Load a 3M GS GLB.</div>
+    <h2>Layers</h2>
+    <div id="layerPanel"></div>
+  </aside>
+  <main id="viewport"></main>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const COMPONENT_SIZE = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
+    const COMPONENT_READ = {
+      5120: (dv, o) => dv.getInt8(o),
+      5121: (dv, o) => dv.getUint8(o),
+      5122: (dv, o) => dv.getInt16(o, true),
+      5123: (dv, o) => dv.getUint16(o, true),
+      5125: (dv, o) => dv.getUint32(o, true),
+      5126: (dv, o) => dv.getFloat32(o, true),
+    };
+    const TYPE_COUNT = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+
+    const viewport = document.getElementById("viewport");
+    const fileInput = document.getElementById("fileInput");
+    const layerPanel = document.getElementById("layerPanel");
+    const status = document.getElementById("status");
+    const pointSize = document.getElementById("pointSize");
+    const baseOnlyBtn = document.getElementById("baseOnlyBtn");
+    const allPlainBtn = document.getElementById("allPlainBtn");
+    const unlockBtn = document.getElementById("unlockBtn");
+    const fitBtn = document.getElementById("fitBtn");
+    const arrangeBtn = document.getElementById("arrangeBtn");
+    const renderMode = document.getElementById("renderMode");
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x101114);
+    const camera = new THREE.PerspectiveCamera(55, 1, 0.01, 1000);
+    camera.position.set(0, 0, 4);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    viewport.appendChild(renderer.domElement);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    const root = new THREE.Group();
+    scene.add(root);
+
+    let parsed = null;
+    let drmUnlocked = false;
+    const layerMeshes = [];
+    const objectStates = new Map();
+    let globalGaussianMesh = null;
+    let globalGaussianDirty = true;
+
+    function setStatus(text) {
+      status.textContent = text;
+    }
+
+    function resize() {
+      const rect = viewport.getBoundingClientRect();
+      renderer.setSize(Math.max(1, rect.width), Math.max(1, rect.height), false);
+      camera.aspect = Math.max(1, rect.width) / Math.max(1, rect.height);
+      camera.updateProjectionMatrix();
+      updateGaussianViewportUniforms();
+    }
+
+    window.addEventListener("resize", resize);
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      sortGaussianLayersByDepth();
+      renderer.render(scene, camera);
+    }
+    resize();
+    animate();
+
+    function parseGlb(arrayBuffer) {
+      const dv = new DataView(arrayBuffer);
+      const magic = dv.getUint32(0, true);
+      const version = dv.getUint32(4, true);
+      if (magic !== 0x46546c67 || version !== 2) {
+        throw new Error("Only GLB version 2 is supported.");
+      }
+      let offset = 12;
+      let json = null;
+      let bin = null;
+      while (offset + 8 <= arrayBuffer.byteLength) {
+        const chunkLength = dv.getUint32(offset, true);
+        const chunkType = dv.getUint32(offset + 4, true);
+        offset += 8;
+        const chunk = arrayBuffer.slice(offset, offset + chunkLength);
+        if (chunkType === 0x4e4f534a) {
+          json = JSON.parse(new TextDecoder().decode(chunk).replace(/\0+$/g, "").trim());
+        } else if (chunkType === 0x004e4942) {
+          bin = chunk;
+        }
+        offset += chunkLength;
+      }
+      if (!json || !bin) throw new Error("GLB must contain JSON and BIN chunks.");
+      return { json, bin };
+    }
+
+    function drmSystemForAccessor(primitive, accessorIndex) {
+      const ext = primitive?.extensions?.EXT_content_protection;
+      const systems = Array.isArray(ext?.systems) ? ext.systems : [];
+      return systems.find(system =>
+        Array.isArray(system.encryptedAccessors) &&
+        system.encryptedAccessors.includes(accessorIndex)
+      ) || null;
+    }
+
+    function accessorArray(doc, bin, accessorIndex, primitive = null) {
+      const accessor = doc.accessors?.[accessorIndex];
+      if (!accessor) throw new Error(`Missing accessor ${accessorIndex}`);
+      const view = doc.bufferViews?.[accessor.bufferView];
+      if (!view) throw new Error(`Missing bufferView ${accessor.bufferView}`);
+      const componentCount = TYPE_COUNT[accessor.type] || 1;
+      const componentSize = COMPONENT_SIZE[accessor.componentType];
+      const read = COMPONENT_READ[accessor.componentType];
+      const stride = view.byteStride || componentCount * componentSize;
+      const drmSystem = drmSystemForAccessor(primitive, accessorIndex);
+      let baseOffset = (view.byteOffset || 0) + (accessor.byteOffset || 0);
+      let dv = new DataView(bin);
+      if (drmSystem) {
+        const key = String(drmSystem.key || "");
+        if (!key) {
+          throw new Error(`Encrypted accessor ${accessorIndex} has no prototype decryption key.`);
+        }
+        const encrypted = new Uint8Array(bin, view.byteOffset || 0, view.byteLength);
+        const decrypted = encrypted.slice();
+        const keyBytes = new TextEncoder().encode(key);
+        for (let i = 0; i < decrypted.length; i++) {
+          decrypted[i] ^= keyBytes[i % keyBytes.length];
+        }
+        dv = new DataView(decrypted.buffer);
+        baseOffset = accessor.byteOffset || 0;
+      }
+      const values = new Float32Array(accessor.count * componentCount);
+      for (let i = 0; i < accessor.count; i++) {
+        const rowOffset = baseOffset + i * stride;
+        for (let j = 0; j < componentCount; j++) {
+          values[i * componentCount + j] = read(dv, rowOffset + j * componentSize);
+        }
+      }
+      return { values, count: accessor.count, componentCount };
+    }
+
+    function gaussianMaterial() {
+      return new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        vertexShader: `
+          attribute vec3 instanceCenter;
+          attribute vec4 instanceColor;
+          attribute vec3 instanceScaleLog;
+          attribute vec4 instanceQuat;
+          varying vec4 vColor;
+          varying vec3 vConic;
+          varying vec2 vScreen;
+          varying float vVisible;
+          uniform float uSplatScale;
+          uniform vec2 uViewport;
+
+          mat3 quatToMat3(vec4 qIn) {
+            vec4 q = normalize(qIn);
+            float x = q.x;
+            float y = q.y;
+            float z = q.z;
+            float w = q.w;
+            float xx = x * x;
+            float xy = x * y;
+            float xz = x * z;
+            float yy = y * y;
+            float yz = y * z;
+            float zz = z * z;
+            float wx = w * x;
+            float wy = w * y;
+            float wz = w * z;
+            return transpose(mat3(
+              1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy),
+              2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx),
+              2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)
+            ));
+          }
+
+          mat3 covariance3D(vec3 scaleLog, vec4 quat) {
+            vec3 s = exp(scaleLog) * uSplatScale;
+            s = max(s, vec3(0.001));
+            float minScale = min(min(s.x, s.y), s.z);
+            float maxScale = max(max(s.x, s.y), s.z);
+            float maxAspectRatio = 20.0;
+            if (maxScale > 0.0 && minScale > 0.0 && maxScale / minScale > maxAspectRatio) {
+              float targetMax = minScale * maxAspectRatio;
+              s = min(s, vec3(targetMax));
+            }
+            mat3 r = quatToMat3(quat);
+            mat3 m = mat3(r[0] * s.x, r[1] * s.y, r[2] * s.z);
+            return m * transpose(m);
+          }
+
+          mat2 covariance2D(vec3 viewPos, mat3 cov3d) {
+            mat3 viewRot = mat3(modelViewMatrix);
+            mat3 covView = viewRot * cov3d * transpose(viewRot);
+            float z = viewPos.z;
+            float z2 = max(z * z, 0.000001);
+            float fx = projectionMatrix[0][0] * uViewport.x * 0.5;
+            float fy = projectionMatrix[1][1] * uViewport.y * 0.5;
+            vec3 jx = vec3(fx / z, 0.0, -fx * viewPos.x / z2);
+            vec3 jy = vec3(0.0, fy / z, -fy * viewPos.y / z2);
+            mat2 cov2d = mat2(
+              dot(jx, covView * jx), dot(jx, covView * jy),
+              dot(jy, covView * jx), dot(jy, covView * jy)
+            );
+            cov2d[0][0] += 0.3;
+            cov2d[1][1] += 0.3;
+            return cov2d;
+          }
+
+          void main() {
+            vColor = instanceColor;
+            vVisible = 1.0;
+
+            vec4 viewPos4 = modelViewMatrix * vec4(instanceCenter, 1.0);
+            vec4 clip = projectionMatrix * viewPos4;
+            if (clip.w <= 0.0) {
+              vVisible = 0.0;
+              gl_Position = vec4(2.0, 2.0, 1.0, 1.0);
+              return;
+            }
+
+            mat2 cov2d = covariance2D(viewPos4.xyz, covariance3D(instanceScaleLog, instanceQuat));
+            float det = cov2d[0][0] * cov2d[1][1] - cov2d[0][1] * cov2d[1][0];
+            if (det <= 1e-8) {
+              vVisible = 0.0;
+              gl_Position = vec4(2.0, 2.0, 1.0, 1.0);
+              return;
+            }
+
+            float mid = 0.5 * (cov2d[0][0] + cov2d[1][1]);
+            float lambda = mid + sqrt(max(mid * mid - det, 0.01));
+            float radius = ceil(3.0 * sqrt(lambda));
+            radius = clamp(radius, 1.0, 96.0);
+
+            vConic = vec3(
+              cov2d[1][1] / det,
+              -0.5 * (cov2d[0][1] + cov2d[1][0]) / det,
+              cov2d[0][0] / det
+            );
+
+            vec2 ndc = clip.xy / clip.w;
+            vScreen = 0.5 * uViewport * (ndc + 1.0);
+            vec2 offsetNdc = position.xy * radius * 2.0 / uViewport;
+            gl_Position = vec4(ndc + offsetNdc, clip.z / clip.w, 1.0);
+          }
+        `,
+        fragmentShader: `
+          precision highp float;
+          varying vec4 vColor;
+          varying vec3 vConic;
+          varying vec2 vScreen;
+          varying float vVisible;
+          void main() {
+            if (vVisible < 0.5) discard;
+            vec2 d = gl_FragCoord.xy - vScreen;
+            float sigma = 0.5 * (vConic.x * d.x * d.x + vConic.z * d.y * d.y) + vConic.y * d.x * d.y;
+            if (sigma < 0.0) discard;
+            float alpha = min(vColor.a * exp(-sigma), 0.999);
+            if (alpha < 1.0 / 255.0) discard;
+            gl_FragColor = vec4(vColor.rgb, alpha);
+          }
+        `,
+        uniforms: {
+          uSplatScale: { value: Number(pointSize.value) },
+          uViewport: { value: currentViewportSize() },
+        },
+      });
+    }
+
+    function currentViewportSize() {
+      const size = new THREE.Vector2();
+      renderer.getDrawingBufferSize(size);
+      return size.max(new THREE.Vector2(1, 1));
+    }
+
+    function updateGaussianViewportUniforms() {
+      const size = currentViewportSize();
+      if (globalGaussianMesh?.material.uniforms?.uViewport) {
+        globalGaussianMesh.material.uniforms.uViewport.value.copy(size);
+      }
+      for (const entry of layerMeshes) {
+        const uniforms = entry.points.material.uniforms;
+        if (uniforms?.uViewport) {
+          uniforms.uViewport.value.copy(size);
+        }
+      }
+    }
+
+    function gaussianEllipsesForPrimitive(doc, bin, primitive, layerRecord, objectRecord) {
+      const posIndex = primitive.attributes?.POSITION;
+      const colIndex = primitive.attributes?.COLOR_0;
+      const gsAttrs = primitive.extensions?.EXT_gaussian_splats?.attributes || {};
+      const scaleIndex = gsAttrs._GS_SCALE;
+      const orientationIndex = gsAttrs._GS_ORIENTATION;
+      if (posIndex === undefined || colIndex === undefined) {
+        throw new Error(`Layer ${layerRecord.id} lacks POSITION or COLOR_0.`);
+      }
+
+      const positions = accessorArray(doc, bin, posIndex, primitive);
+      const colors = accessorArray(doc, bin, colIndex, primitive);
+      const scales = scaleIndex !== undefined ? accessorArray(doc, bin, scaleIndex, primitive) : null;
+      const orientations = orientationIndex !== undefined ? accessorArray(doc, bin, orientationIndex, primitive) : null;
+      const count = positions.count;
+
+      const centers = new Float32Array(count * 3);
+      const rgba = new Float32Array(count * 4);
+      const scaleLog = new Float32Array(count * 3);
+      const quats = new Float32Array(count * 4);
+
+      for (let i = 0; i < count; i++) {
+        centers[i * 3 + 0] = positions.values[i * positions.componentCount + 0];
+        centers[i * 3 + 1] = positions.values[i * positions.componentCount + 1];
+        centers[i * 3 + 2] = positions.values[i * positions.componentCount + 2];
+
+        rgba[i * 4 + 0] = colors.values[i * colors.componentCount + 0] ?? 1;
+        rgba[i * 4 + 1] = colors.values[i * colors.componentCount + 1] ?? 1;
+        rgba[i * 4 + 2] = colors.values[i * colors.componentCount + 2] ?? 1;
+        rgba[i * 4 + 3] = colors.componentCount > 3 ? (colors.values[i * colors.componentCount + 3] ?? 1) : 1;
+
+        scaleLog[i * 3 + 0] = scales ? scales.values[i * scales.componentCount + 0] : Math.log(0.01);
+        scaleLog[i * 3 + 1] = scales ? scales.values[i * scales.componentCount + 1] : Math.log(0.01);
+        scaleLog[i * 3 + 2] = scales ? scales.values[i * scales.componentCount + 2] : Math.log(0.01);
+        if (orientations) {
+          const o = i * orientations.componentCount;
+          quats[i * 4 + 0] = orientations.values[o + 1];
+          quats[i * 4 + 1] = orientations.values[o + 2];
+          quats[i * 4 + 2] = orientations.values[o + 3];
+          quats[i * 4 + 3] = orientations.values[o + 0];
+        } else {
+          quats[i * 4 + 0] = 0;
+          quats[i * 4 + 1] = 0;
+          quats[i * 4 + 2] = 0;
+          quats[i * 4 + 3] = 1;
+        }
+      }
+
+      const geometry = new THREE.InstancedBufferGeometry();
+      const quad = new Float32Array([
+        -1, -1, 0,
+         1, -1, 0,
+         1,  1, 0,
+        -1,  1, 0,
+      ]);
+      const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+      geometry.setAttribute("position", new THREE.BufferAttribute(quad, 3));
+      geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+      geometry.setAttribute("instanceCenter", new THREE.InstancedBufferAttribute(centers, 3));
+      geometry.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(rgba, 4));
+      geometry.setAttribute("instanceScaleLog", new THREE.InstancedBufferAttribute(scaleLog, 3));
+      geometry.setAttribute("instanceQuat", new THREE.InstancedBufferAttribute(quats, 4));
+      geometry.instanceCount = count;
+      geometry.boundingSphere = boundingSphereFromCenters(centers, count);
+      geometry.userData.sortSources = {
+        centers: centers.slice(),
+        rgba: rgba.slice(),
+        scaleLog: scaleLog.slice(),
+        quats: quats.slice(),
+        count,
+        lastCameraKey: "",
+      };
+
+      const mesh = new THREE.Mesh(geometry, gaussianMaterial());
+      mesh.name = `${objectRecord.name || objectRecord.id}:${layerRecord.id}`;
+      return mesh;
+    }
+
+    function cameraSortKey() {
+      const e = camera.matrixWorld.elements;
+      return `${e[12].toFixed(3)},${e[13].toFixed(3)},${e[14].toFixed(3)},${controls.target.x.toFixed(3)},${controls.target.y.toFixed(3)},${controls.target.z.toFixed(3)}`;
+    }
+
+    function sortGaussianLayersByDepth() {
+      if (renderMode.value !== "gaussian") return;
+      const key = cameraSortKey();
+      if (globalGaussianMesh) {
+        sortGaussianMeshByDepth(globalGaussianMesh, key);
+        return;
+      }
+      for (const entry of layerMeshes) {
+        if (entry.points.visible) sortGaussianMeshByDepth(entry.points, key);
+      }
+    }
+
+    function sortGaussianMeshByDepth(mesh, key) {
+      if (!mesh.visible) return;
+      const geom = mesh.geometry;
+      const src = geom.userData.sortSources;
+      if (!src || src.lastCameraKey === key) return;
+      src.lastCameraKey = key;
+      const viewMatrix = camera.matrixWorldInverse;
+      const world = new THREE.Vector3();
+      const view = new THREE.Vector3();
+
+      const sortable = new Array(src.count);
+      for (let i = 0; i < src.count; i++) {
+        world.set(src.centers[i * 3 + 0], src.centers[i * 3 + 1], src.centers[i * 3 + 2]);
+        mesh.localToWorld(world);
+        view.copy(world).applyMatrix4(viewMatrix);
+        sortable[i] = { index: i, z: view.z };
+      }
+      sortable.sort((a, b) => a.z - b.z);
+
+      reorderInstancedAttribute(geom.getAttribute("instanceCenter"), src.centers, 3, sortable);
+      reorderInstancedAttribute(geom.getAttribute("instanceColor"), src.rgba, 4, sortable);
+      reorderInstancedAttribute(geom.getAttribute("instanceScaleLog"), src.scaleLog, 3, sortable);
+      reorderInstancedAttribute(geom.getAttribute("instanceQuat"), src.quats, 4, sortable);
+    }
+
+    function reorderInstancedAttribute(attribute, source, itemSize, sortable) {
+      const out = attribute.array;
+      for (let dst = 0; dst < sortable.length; dst++) {
+        const src = sortable[dst].index * itemSize;
+        const base = dst * itemSize;
+        for (let k = 0; k < itemSize; k++) out[base + k] = source[src + k];
+      }
+      attribute.needsUpdate = true;
+    }
+
+    function boundingSphereFromCenters(centers, count) {
+      const box = new THREE.Box3();
+      const p = new THREE.Vector3();
+      for (let i = 0; i < count; i++) {
+        p.set(centers[i * 3 + 0], centers[i * 3 + 1], centers[i * 3 + 2]);
+        box.expandByPoint(p);
+      }
+      if (box.isEmpty()) return new THREE.Sphere(new THREE.Vector3(), 1);
+      const sphere = new THREE.Sphere();
+      box.getBoundingSphere(sphere);
+      sphere.radius = Math.max(sphere.radius, 0.001);
+      return sphere;
+    }
+
+    function pointCloudForPrimitive(doc, bin, primitive, layerRecord, objectRecord) {
+      const posIndex = primitive.attributes?.POSITION;
+      const colIndex = primitive.attributes?.COLOR_0;
+      if (posIndex === undefined || colIndex === undefined) {
+        throw new Error(`Layer ${layerRecord.id} lacks POSITION or COLOR_0.`);
+      }
+      const positions = accessorArray(doc, bin, posIndex, primitive);
+      const colors = accessorArray(doc, bin, colIndex, primitive);
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute("position", new THREE.BufferAttribute(positions.values, positions.componentCount));
+
+      const rgb = new Float32Array(positions.count * 3);
+      for (let i = 0; i < positions.count; i++) {
+        rgb[i * 3 + 0] = colors.values[i * colors.componentCount + 0] ?? 1;
+        rgb[i * 3 + 1] = colors.values[i * colors.componentCount + 1] ?? 1;
+        rgb[i * 3 + 2] = colors.values[i * colors.componentCount + 2] ?? 1;
+      }
+      geom.setAttribute("color", new THREE.BufferAttribute(rgb, 3));
+      geom.computeBoundingSphere();
+
+      const mat = new THREE.PointsMaterial({
+        size: Number(pointSize.value),
+        vertexColors: true,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: layerRecord.role === "base" ? 1.0 : 0.85,
+        depthWrite: false,
+      });
+      const points = new THREE.Points(geom, mat);
+      points.name = `${objectRecord.name || objectRecord.id}:${layerRecord.id}`;
+      return points;
+    }
+
+    function renderableForPrimitive(doc, bin, primitive, layerRecord, objectRecord) {
+      if (renderMode.value === "points") {
+        return pointCloudForPrimitive(doc, bin, primitive, layerRecord, objectRecord);
+      }
+      return gaussianEllipsesForPrimitive(doc, bin, primitive, layerRecord, objectRecord);
+    }
+
+    function layerExtension(doc) {
+      return doc.extensions?.EXT_gaussian_splat_layers?.objects || [];
+    }
+
+    function primitiveHasDrm(primitive) {
+      return Boolean(primitive.extensions?.EXT_content_protection);
+    }
+
+    function drmSystemsForPrimitive(primitive) {
+      const ext = primitive.extensions?.EXT_content_protection;
+      if (!ext) return [];
+      const systems = Array.isArray(ext.systems) ? ext.systems : [ext];
+      return systems.map(system => {
+        const uri = String(system.schemeIdUri || "").toLowerCase();
+        if (uri.includes("edef8ba9")) return "widevine";
+        if (uri.includes("9a04f079")) return "playready";
+        if (uri.includes("simple-xor")) return "xor";
+        return system.system || system.schemeIdUri || "drm";
+      });
+    }
+
+    function applyNodeTransform(points, doc, nodeIndex) {
+      const node = doc.nodes?.[nodeIndex];
+      if (!node) return;
+      if (node.translation) points.position.fromArray(node.translation);
+      if (node.rotation) points.quaternion.fromArray(node.rotation);
+      if (node.scale) points.scale.fromArray(node.scale);
+      points.updateMatrixWorld(true);
+    }
+
+    function clearScene() {
+      if (globalGaussianMesh) {
+        root.remove(globalGaussianMesh);
+        globalGaussianMesh.geometry.dispose();
+        globalGaussianMesh.material.dispose();
+        globalGaussianMesh = null;
+      }
+      for (const entry of layerMeshes) {
+        if (entry.points.parent) entry.points.parent.remove(entry.points);
+        entry.points.geometry.dispose();
+        entry.points.material.dispose();
+      }
+      layerMeshes.length = 0;
+      objectStates.clear();
+      layerPanel.innerHTML = "";
+      globalGaussianDirty = true;
+    }
+
+    function objectIdForRecord(objectRecord) {
+      return objectRecord.id || objectRecord.name || `object_${objectRecord.node ?? 0}`;
+    }
+
+    function buildScene(doc, bin) {
+      clearScene();
+      const objects = layerExtension(doc);
+      if (!objects.length) {
+        throw new Error("Missing EXT_gaussian_splat_layers root extension.");
+      }
+
+      for (const objectRecord of objects) {
+        const objectId = objectIdForRecord(objectRecord);
+        const meshIndex = objectRecord.mesh;
+        const mesh = doc.meshes?.[meshIndex];
+        if (!mesh) continue;
+        for (const layerRecord of objectRecord.layers || []) {
+          const primitive = mesh.primitives?.[layerRecord.primitive];
+          if (!primitive) continue;
+          const locked = primitiveHasDrm(primitive);
+          const points = renderableForPrimitive(doc, bin, primitive, layerRecord, objectRecord);
+          applyNodeTransform(points, doc, objectRecord.node);
+          if (renderMode.value === "points") root.add(points);
+          layerMeshes.push({ objectId, objectRecord, layerRecord, primitive, points, locked });
+          if (!objectStates.has(objectId)) {
+            objectStates.set(objectId, {
+              position: points.position.clone(),
+              quaternion: points.quaternion.clone(),
+              scale: points.scale.clone(),
+            });
+          }
+        }
+      }
+      buildLayerPanel();
+      applyVisibility();
+      fitView();
+    }
+
+    function buildLayerPanel() {
+      layerPanel.innerHTML = "";
+      const byObject = new Map();
+      for (const entry of layerMeshes) {
+        const id = entry.objectId;
+        if (!byObject.has(id)) byObject.set(id, []);
+        byObject.get(id).push(entry);
+      }
+
+      for (const [objectId, entries] of byObject) {
+        const objectEl = document.createElement("section");
+        objectEl.className = "object";
+        const head = document.createElement("div");
+        head.className = "object-head";
+        head.innerHTML = `<span>${objectId}</span><span class="badge">${entries.length} layers</span>`;
+        objectEl.appendChild(head);
+
+        const transformEl = document.createElement("div");
+        transformEl.className = "object-transform";
+        const position = objectStates.get(objectId)?.position || new THREE.Vector3();
+        ["x", "y", "z"].forEach((axis, axisIndex) => {
+          const label = document.createElement("label");
+          label.className = "axis-control";
+          const axisText = document.createElement("span");
+          axisText.textContent = axis.toUpperCase();
+          const input = document.createElement("input");
+          input.type = "number";
+          input.step = "0.05";
+          input.value = position.getComponent(axisIndex).toFixed(3);
+          input.dataset.objectId = objectId;
+          input.dataset.axis = axis;
+          input.addEventListener("change", updateObjectPositionFromInput);
+          label.append(axisText, input);
+          transformEl.appendChild(label);
+        });
+        objectEl.appendChild(transformEl);
+
+        for (const entry of entries) {
+          const row = document.createElement("label");
+          row.className = "layer";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.checked = entry.layerRecord.role === "base" || !entry.locked;
+          input.dataset.layerId = entry.layerRecord.id;
+          input.addEventListener("change", applyVisibility);
+          const text = document.createElement("div");
+          const dep = entry.layerRecord.dependsOn?.length ? ` depends: ${entry.layerRecord.dependsOn.join(",")}` : "";
+          text.innerHTML = `<div>${entry.layerRecord.id}</div><div class="meta">${entry.layerRecord.role}${dep}</div>`;
+          const badge = document.createElement("span");
+          badge.className = `badge${entry.locked ? " locked" : ""}`;
+          const drmSystems = drmSystemsForPrimitive(entry.primitive);
+          badge.textContent = entry.locked ? drmSystems.join("+") || "DRM" : "plain";
+          row.append(input, text, badge);
+          objectEl.appendChild(row);
+        }
+        layerPanel.appendChild(objectEl);
+      }
+    }
+
+    function updateObjectPositionFromInput(event) {
+      const input = event.currentTarget;
+      const objectId = input.dataset.objectId;
+      const axis = input.dataset.axis;
+      const value = Number(input.value);
+      if (!Number.isFinite(value) || !objectStates.has(objectId)) return;
+      objectStates.get(objectId).position[axis] = value;
+      applyObjectState(objectId);
+    }
+
+    function applyObjectState(objectId) {
+      const state = objectStates.get(objectId);
+      if (!state) return;
+      for (const entry of layerMeshes) {
+        if (entry.objectId !== objectId) continue;
+        entry.points.position.copy(state.position);
+        entry.points.quaternion.copy(state.quaternion);
+        entry.points.scale.copy(state.scale);
+        entry.points.updateMatrixWorld(true);
+      }
+      if (renderMode.value === "gaussian") rebuildGlobalGaussianMesh();
+    }
+
+    function refreshObjectPositionInputs(objectId) {
+      const position = objectStates.get(objectId)?.position;
+      if (!position) return;
+      for (const input of layerPanel.querySelectorAll("input[type=number]")) {
+        if (input.dataset.objectId !== objectId) continue;
+        input.value = position[input.dataset.axis].toFixed(3);
+      }
+    }
+
+    function objectWorldBox(objectId) {
+      const box = new THREE.Box3();
+      for (const entry of layerMeshes) {
+        if (entry.objectId !== objectId) continue;
+        const sphere = entry.points.geometry.boundingSphere?.clone();
+        if (!sphere) continue;
+        entry.points.updateMatrixWorld(true);
+        sphere.applyMatrix4(entry.points.matrixWorld);
+        box.expandByPoint(sphere.center.clone().addScalar(sphere.radius));
+        box.expandByPoint(sphere.center.clone().addScalar(-sphere.radius));
+      }
+      return box;
+    }
+
+    function arrangeObjectsSideBySide() {
+      const objectIds = [...objectStates.keys()];
+      if (objectIds.length < 2) return;
+      const layouts = objectIds.map(objectId => {
+        const box = objectWorldBox(objectId);
+        return {
+          objectId,
+          box,
+          center: box.getCenter(new THREE.Vector3()),
+          width: Math.max(box.getSize(new THREE.Vector3()).x, 0.01),
+        };
+      }).filter(layout => !layout.box.isEmpty());
+      if (layouts.length < 2) return;
+
+      const maxWidth = Math.max(...layouts.map(layout => layout.width));
+      const gap = Math.max(maxWidth * 0.12, 0.1);
+      const totalWidth = layouts.reduce((sum, layout) => sum + layout.width, 0) + gap * (layouts.length - 1);
+      let cursor = -totalWidth * 0.5;
+      for (const layout of layouts) {
+        const desiredCenterX = cursor + layout.width * 0.5;
+        const state = objectStates.get(layout.objectId);
+        state.position.x += desiredCenterX - layout.center.x;
+        applyObjectState(layout.objectId);
+        refreshObjectPositionInputs(layout.objectId);
+        cursor += layout.width + gap;
+      }
+      fitView();
+    }
+
+    function checkedLayerIds() {
+      return new Set([...layerPanel.querySelectorAll("input[type=checkbox]:checked")].map(el => el.dataset.layerId));
+    }
+
+    function applyVisibility() {
+      const checked = checkedLayerIds();
+      for (const entry of layerMeshes) {
+        const visible = checked.has(entry.layerRecord.id) && (!entry.locked || drmUnlocked);
+        entry.points.visible = renderMode.value === "points" && visible;
+      }
+      if (renderMode.value === "gaussian") rebuildGlobalGaussianMesh();
+    }
+
+    function rebuildGlobalGaussianMesh() {
+      if (globalGaussianMesh) {
+        root.remove(globalGaussianMesh);
+        globalGaussianMesh.geometry.dispose();
+        globalGaussianMesh.material.dispose();
+        globalGaussianMesh = null;
+      }
+
+      const checked = checkedLayerIds();
+      const visibleEntries = layerMeshes.filter(entry => checked.has(entry.layerRecord.id) && (!entry.locked || drmUnlocked));
+      const sources = [];
+      let total = 0;
+      for (const entry of visibleEntries) {
+        const src = entry.points.geometry.userData.sortSources;
+        if (!src) continue;
+        entry.points.updateMatrixWorld(true);
+        sources.push({ entry, src });
+        total += src.count;
+      }
+      if (!total) return;
+
+      const centers = new Float32Array(total * 3);
+      const rgba = new Float32Array(total * 4);
+      const scaleLog = new Float32Array(total * 3);
+      const quats = new Float32Array(total * 4);
+      const p = new THREE.Vector3();
+      let dst = 0;
+      for (const { entry, src } of sources) {
+        for (let i = 0; i < src.count; i++, dst++) {
+          p.set(src.centers[i * 3 + 0], src.centers[i * 3 + 1], src.centers[i * 3 + 2]);
+          p.applyMatrix4(entry.points.matrixWorld);
+          centers[dst * 3 + 0] = p.x;
+          centers[dst * 3 + 1] = p.y;
+          centers[dst * 3 + 2] = p.z;
+          rgba.set(src.rgba.subarray(i * 4, i * 4 + 4), dst * 4);
+          scaleLog.set(src.scaleLog.subarray(i * 3, i * 3 + 3), dst * 3);
+          quats.set(src.quats.subarray(i * 4, i * 4 + 4), dst * 4);
+        }
+      }
+
+      const geometry = makeGaussianGeometry(centers, rgba, scaleLog, quats, total);
+      globalGaussianMesh = new THREE.Mesh(geometry, gaussianMaterial());
+      globalGaussianMesh.name = "3M global Gaussian splats";
+      root.add(globalGaussianMesh);
+      globalGaussianDirty = false;
+    }
+
+    function makeGaussianGeometry(centers, rgba, scaleLog, quats, count) {
+      const geometry = new THREE.InstancedBufferGeometry();
+      const quad = new Float32Array([
+        -1, -1, 0,
+         1, -1, 0,
+         1,  1, 0,
+        -1,  1, 0,
+      ]);
+      const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+      geometry.setAttribute("position", new THREE.BufferAttribute(quad, 3));
+      geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+      geometry.setAttribute("instanceCenter", new THREE.InstancedBufferAttribute(centers, 3));
+      geometry.setAttribute("instanceColor", new THREE.InstancedBufferAttribute(rgba, 4));
+      geometry.setAttribute("instanceScaleLog", new THREE.InstancedBufferAttribute(scaleLog, 3));
+      geometry.setAttribute("instanceQuat", new THREE.InstancedBufferAttribute(quats, 4));
+      geometry.instanceCount = count;
+      geometry.boundingSphere = boundingSphereFromCenters(centers, count);
+      geometry.userData.sortSources = {
+        centers: centers.slice(),
+        rgba: rgba.slice(),
+        scaleLog: scaleLog.slice(),
+        quats: quats.slice(),
+        count,
+        lastCameraKey: "",
+      };
+      return geometry;
+    }
+
+    function setBaseOnly() {
+      for (const input of layerPanel.querySelectorAll("input[type=checkbox]")) {
+        const entry = layerMeshes.find(item => item.layerRecord.id === input.dataset.layerId);
+        input.checked = entry?.layerRecord.role === "base";
+      }
+      applyVisibility();
+    }
+
+    function setAllPlain() {
+      for (const input of layerPanel.querySelectorAll("input[type=checkbox]")) {
+        const entry = layerMeshes.find(item => item.layerRecord.id === input.dataset.layerId);
+        input.checked = Boolean(entry && !entry.locked);
+      }
+      applyVisibility();
+    }
+
+    function fitView() {
+      const box = new THREE.Box3();
+      let hasBox = false;
+      for (const entry of layerMeshes) {
+        if (!entry.points.geometry.boundingSphere) entry.points.geometry.computeBoundingSphere();
+        const sphere = entry.points.geometry.boundingSphere.clone();
+        sphere.applyMatrix4(entry.points.matrixWorld);
+        box.expandByPoint(sphere.center.clone().addScalar(sphere.radius));
+        box.expandByPoint(sphere.center.clone().addScalar(-sphere.radius));
+        hasBox = true;
+      }
+      if (!hasBox || box.isEmpty()) return;
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3()).length();
+      const distance = Math.max(size * 0.75, 0.5);
+      camera.position.copy(center).add(new THREE.Vector3(0, 0, distance));
+      camera.near = Math.max(distance / 1000, 0.001);
+      camera.far = Math.max(distance * 1000, 10);
+      camera.updateProjectionMatrix();
+      controls.target.copy(center);
+      controls.update();
+    }
+
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      try {
+        setStatus(`Loading ${file.name}...`);
+        drmUnlocked = false;
+        const buffer = await file.arrayBuffer();
+        parsed = parseGlb(buffer);
+        buildScene(parsed.json, parsed.bin);
+        const lockedCount = layerMeshes.filter(item => item.locked).length;
+        setStatus([
+          `Loaded ${file.name}`,
+          `Objects: ${layerExtension(parsed.json).length}`,
+          `Layers: ${layerMeshes.length}`,
+          `DRM layers: ${lockedCount}`,
+        ].join("\n"));
+        baseOnlyBtn.disabled = false;
+        allPlainBtn.disabled = false;
+        unlockBtn.disabled = lockedCount === 0;
+        fitBtn.disabled = false;
+        arrangeBtn.disabled = layerExtension(parsed.json).length < 2;
+      } catch (err) {
+        console.error(err);
+        setStatus(`Error: ${err.message}`);
+      }
+    });
+
+    pointSize.addEventListener("input", () => {
+      const size = Number(pointSize.value);
+      if (globalGaussianMesh?.material.uniforms?.uSplatScale) {
+        globalGaussianMesh.material.uniforms.uSplatScale.value = size;
+      }
+      for (const entry of layerMeshes) {
+        if (entry.points.material.uniforms?.uSplatScale) {
+          entry.points.material.uniforms.uSplatScale.value = size;
+        } else {
+          entry.points.material.size = size * 0.03;
+        }
+      }
+    });
+
+    renderMode.addEventListener("change", () => {
+      if (parsed) {
+        buildScene(parsed.json, parsed.bin);
+      }
+    });
+
+    baseOnlyBtn.addEventListener("click", setBaseOnly);
+    allPlainBtn.addEventListener("click", setAllPlain);
+    unlockBtn.addEventListener("click", () => {
+      drmUnlocked = !drmUnlocked;
+      unlockBtn.textContent = drmUnlocked ? "Lock DRM" : "Unlock DRM";
+      applyVisibility();
+    });
+    fitBtn.addEventListener("click", fitView);
+    arrangeBtn.addEventListener("click", arrangeObjectsSideBySide);
+  </script>
+</body>
+</html>

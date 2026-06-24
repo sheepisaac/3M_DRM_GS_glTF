@@ -1,0 +1,547 @@
+#!/usr/bin/env python3
+"""Build static scalable GS layers from one INRIA-style GS PLY.
+
+This is a PLY-only layerizer for the 3M DRM GS glTF prototype. The default
+profile follows SHIN's LoD budget structure: Stage-A-like base top-k, then
+enhancement layers selected from the remaining pool with SHIN's default
+layer ratios and lf/mix/hf band weights. It does not run SHIN's image-space
+residual scoring because that requires cameras, GT images, and rendering.
+Instead it builds low/mid/high proxy scores from PLY attributes.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import struct
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, List, Sequence
+
+
+PLY_TYPES = {
+    "char": ("b", int),
+    "int8": ("b", int),
+    "uchar": ("B", int),
+    "uint8": ("B", int),
+    "short": ("h", int),
+    "int16": ("h", int),
+    "ushort": ("H", int),
+    "uint16": ("H", int),
+    "int": ("i", int),
+    "int32": ("i", int),
+    "uint": ("I", int),
+    "uint32": ("I", int),
+    "float": ("f", float),
+    "float32": ("f", float),
+    "double": ("d", float),
+    "float64": ("d", float),
+}
+
+
+@dataclass
+class Property:
+    type_name: str
+    name: str
+
+
+@dataclass
+class PlyTable:
+    fmt: str
+    vertex_count: int
+    properties: List[Property]
+    rows: List[List[float]]
+
+
+def sigmoid(x: float) -> float:
+    if x >= 0:
+        z = math.exp(-x)
+        return 1.0 / (1.0 + z)
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+
+def read_header(path: Path):
+    header_lines = []
+    with path.open("rb") as f:
+        while True:
+            line = f.readline()
+            if not line:
+                raise ValueError("PLY header ended before end_header")
+            text = line.decode("ascii").rstrip("\r\n")
+            header_lines.append(text)
+            if text == "end_header":
+                break
+        data_offset = f.tell()
+
+    if not header_lines or header_lines[0] != "ply":
+        raise ValueError("Input is not a PLY file")
+
+    fmt = None
+    vertex_count = None
+    properties: List[Property] = []
+    in_vertex = False
+
+    for line in header_lines:
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == "format":
+            fmt = parts[1]
+        elif parts[0] == "element":
+            in_vertex = parts[1] == "vertex"
+            if in_vertex:
+                vertex_count = int(parts[2])
+        elif parts[0] == "property" and in_vertex:
+            if parts[1] == "list":
+                raise ValueError("List properties in vertex are not supported")
+            if parts[1] not in PLY_TYPES:
+                raise ValueError(f"Unsupported PLY property type: {parts[1]}")
+            properties.append(Property(parts[1], parts[2]))
+
+    if fmt not in {"ascii", "binary_little_endian"}:
+        raise ValueError(f"Unsupported PLY format: {fmt}")
+    if vertex_count is None:
+        raise ValueError("PLY has no vertex element")
+    if not properties:
+        raise ValueError("PLY vertex element has no scalar properties")
+
+    return fmt, vertex_count, properties, data_offset
+
+
+def read_ply(path: Path) -> PlyTable:
+    fmt, vertex_count, properties, data_offset = read_header(path)
+    rows: List[List[float]] = []
+
+    if fmt == "ascii":
+        with path.open("r", encoding="ascii") as f:
+            for line in f:
+                if line.strip() == "end_header":
+                    break
+            for i in range(vertex_count):
+                line = f.readline()
+                if not line:
+                    raise ValueError(f"Expected {vertex_count} rows, got {i}")
+                values = line.split()
+                if len(values) < len(properties):
+                    raise ValueError(f"Vertex row {i} has too few values")
+                row = [PLY_TYPES[prop.type_name][1](values[j]) for j, prop in enumerate(properties)]
+                rows.append(row)
+    else:
+        unpack_fmt = "<" + "".join(PLY_TYPES[prop.type_name][0] for prop in properties)
+        record_size = struct.calcsize(unpack_fmt)
+        with path.open("rb") as f:
+            f.seek(data_offset)
+            for i in range(vertex_count):
+                chunk = f.read(record_size)
+                if len(chunk) != record_size:
+                    raise ValueError(f"Expected {vertex_count} binary rows, got {i}")
+                rows.append(list(struct.unpack(unpack_fmt, chunk)))
+
+    return PlyTable(fmt=fmt, vertex_count=vertex_count, properties=properties, rows=rows)
+
+
+def write_binary_little_ply(path: Path, properties: Sequence[Property], rows: Iterable[Sequence[float]]) -> int:
+    rows = list(rows)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as f:
+        f.write(b"ply\n")
+        f.write(b"format binary_little_endian 1.0\n")
+        f.write(b"comment generated by 3M_DRM_GS_glTF scalable_ply_static layerizer\n")
+        f.write(f"element vertex {len(rows)}\n".encode("ascii"))
+        for prop in properties:
+            f.write(f"property {prop.type_name} {prop.name}\n".encode("ascii"))
+        f.write(b"end_header\n")
+
+        pack_fmt = "<" + "".join(PLY_TYPES[prop.type_name][0] for prop in properties)
+        casters = [PLY_TYPES[prop.type_name][1] for prop in properties]
+        for row in rows:
+            typed = [casters[i](row[i]) for i in range(len(properties))]
+            f.write(struct.pack(pack_fmt, *typed))
+    return len(rows)
+
+
+def property_index(properties: Sequence[Property], name: str) -> int | None:
+    for i, prop in enumerate(properties):
+        if prop.name == name:
+            return i
+    return None
+
+
+def normalize_by_nonzero_median(values: Sequence[float]) -> List[float]:
+    nz = sorted(v for v in values if v > 0.0 and math.isfinite(v))
+    if not nz:
+        return [0.0 for _ in values]
+    med = nz[len(nz) // 2]
+    if med <= 0.0:
+        return [0.0 for _ in values]
+    return [0.0 if not math.isfinite(v) else v / (med + 1e-8) for v in values]
+
+
+def parse_float_csv(text: str) -> List[float]:
+    return [float(tok.strip()) for tok in text.split(",") if tok.strip()]
+
+
+def parse_str_csv(text: str) -> List[str]:
+    return [tok.strip().lower() for tok in text.split(",") if tok.strip()]
+
+
+def weights_from_mode(mode: str):
+    mode = mode.lower().strip()
+    if mode == "lf":
+        return 1.0, 0.35, 0.10
+    if mode == "mix":
+        return 0.45, 1.0, 0.35
+    if mode == "hf":
+        return 0.10, 0.55, 1.0
+    raise ValueError(f"Unknown SHIN layer mode: {mode}")
+
+
+def parse_lmh_weights(text: str, modes: Sequence[str]) -> List[tuple[float, float, float]]:
+    if not text.strip():
+        return [weights_from_mode(mode) for mode in modes]
+    rows = []
+    for row in text.split(";"):
+        vals = parse_float_csv(row)
+        if len(vals) != 3:
+            raise ValueError("--layer-lmh-weights rows must be low,mid,high")
+        rows.append((vals[0], vals[1], vals[2]))
+    return rows
+
+
+def compute_lod_scores(table: PlyTable) -> dict[str, List[float]]:
+    props = table.properties
+    opacity_idx = property_index(props, "opacity")
+    scale_indices = [property_index(props, f"scale_{i}") for i in range(3)]
+    dc_indices = [property_index(props, f"f_dc_{i}") for i in range(3)]
+    rest_indices = [
+        i for i, prop in enumerate(props)
+        if prop.name.startswith("f_rest_")
+    ]
+
+    alphas = []
+    sizes = []
+    inv_sizes = []
+    dc_energy = []
+    sh_low_energy = []
+    sh_mid_energy = []
+    sh_high_energy = []
+
+    for row in table.rows:
+        alpha = sigmoid(float(row[opacity_idx])) if opacity_idx is not None else 1.0
+        alphas.append(alpha)
+
+        if all(idx is not None for idx in scale_indices):
+            log_scales = [float(row[idx]) for idx in scale_indices if idx is not None]
+            mean_log_scale = sum(log_scales) / 3.0
+            size = math.exp(max(-20.0, min(20.0, mean_log_scale)))
+        else:
+            size = 1.0
+        sizes.append(size)
+        inv_sizes.append(1.0 / max(size, 1e-8))
+
+        dc = 0.0
+        if all(idx is not None for idx in dc_indices):
+            dc = math.sqrt(sum(float(row[idx]) ** 2 for idx in dc_indices if idx is not None))
+        dc_energy.append(dc)
+
+        rest_values = [float(row[idx]) for idx in rest_indices]
+        if rest_indices:
+            third = max(1, len(rest_values) // 3)
+            low_vals = rest_values[:third]
+            mid_vals = rest_values[third:2 * third]
+            high_vals = rest_values[2 * third:]
+            sh_low_energy.append(math.sqrt(sum(v * v for v in low_vals) / max(1, len(low_vals))))
+            sh_mid_energy.append(math.sqrt(sum(v * v for v in mid_vals) / max(1, len(mid_vals))))
+            sh_high_energy.append(math.sqrt(sum(v * v for v in high_vals) / max(1, len(high_vals))))
+        else:
+            sh_low_energy.append(0.0)
+            sh_mid_energy.append(0.0)
+            sh_high_energy.append(0.0)
+
+    alpha_n = normalize_by_nonzero_median(alphas)
+    size_n = normalize_by_nonzero_median(sizes)
+    inv_size_n = normalize_by_nonzero_median(inv_sizes)
+    dc_n = normalize_by_nonzero_median(dc_energy)
+    sh_low_n = normalize_by_nonzero_median(sh_low_energy)
+    sh_mid_n = normalize_by_nonzero_median(sh_mid_energy)
+    sh_high_n = normalize_by_nonzero_median(sh_high_energy)
+
+    base_score = []
+    low_score = []
+    mid_score = []
+    high_score = []
+    for i in range(len(table.rows)):
+        opacity = alpha_n[i]
+        low = opacity * ((0.60 * size_n[i]) + (0.25 * dc_n[i]) + (0.15 * sh_low_n[i]))
+        mid = opacity * ((0.25 * size_n[i]) + (0.35 * dc_n[i]) + (0.40 * sh_mid_n[i]))
+        high = opacity * ((0.20 * inv_size_n[i]) + (0.20 * dc_n[i]) + (0.60 * sh_high_n[i]))
+        base = (0.65 * low) + (0.25 * mid) + (0.10 * high)
+        low_score.append(low)
+        mid_score.append(mid)
+        high_score.append(high)
+        base_score.append(base)
+
+    return {
+        "base": base_score,
+        "low": low_score,
+        "mid": mid_score,
+        "high": high_score,
+    }
+
+
+def compute_scores(table: PlyTable) -> List[float]:
+    return compute_lod_scores(table)["base"]
+
+
+def split_indices(scores: Sequence[float], base_fraction: float, enhancement_layers: int) -> List[List[int]]:
+    if not 0.0 < base_fraction < 1.0:
+        raise ValueError("--base-fraction must be in (0, 1)")
+    if enhancement_layers < 1:
+        raise ValueError("--enhancement-layers must be >= 1")
+
+    order = sorted(range(len(scores)), key=lambda idx: scores[idx], reverse=True)
+    base_count = max(1, min(len(order), int(round(len(order) * base_fraction))))
+    groups = [order[:base_count]]
+    remaining = order[base_count:]
+
+    if not remaining:
+        groups.extend([] for _ in range(enhancement_layers))
+        return groups
+
+    for layer_idx in range(enhancement_layers):
+        start = int(round(len(remaining) * layer_idx / enhancement_layers))
+        end = int(round(len(remaining) * (layer_idx + 1) / enhancement_layers))
+        groups.append(remaining[start:end])
+    return groups
+
+
+def split_indices_shin_lod(table: PlyTable, base_fraction: float, layer_ratios: Sequence[float],
+                           layer_modes: Sequence[str], layer_lmh_weights: str) -> tuple[List[List[int]], dict]:
+    if not 0.0 < base_fraction <= 1.0:
+        raise ValueError("--base-fraction must be in (0, 1]")
+    if len(layer_ratios) == 0:
+        raise ValueError("--layer-keep-ratios must contain at least one value")
+    if len(layer_modes) != len(layer_ratios):
+        raise ValueError("--layer-modes length must match --layer-keep-ratios length")
+    if any(r <= 0.0 for r in layer_ratios):
+        raise ValueError("--layer-keep-ratios values must be > 0")
+
+    weights = parse_lmh_weights(layer_lmh_weights, layer_modes)
+    if len(weights) != len(layer_ratios):
+        raise ValueError("--layer-lmh-weights row count must match --layer-keep-ratios length")
+
+    lod_scores = compute_lod_scores(table)
+    n = len(table.rows)
+    base_count = max(1, min(n, int(math.floor(float(base_fraction) * float(n)))))
+    base_indices = sorted(range(n), key=lambda idx: lod_scores["base"][idx], reverse=True)[:base_count]
+    remaining = set(range(n))
+    for idx in base_indices:
+        remaining.discard(idx)
+
+    groups: List[List[int]] = [base_indices]
+    stage_meta = []
+    for layer_idx, (ratio, mode, (w_low, w_mid, w_high)) in enumerate(zip(layer_ratios, layer_modes, weights), start=1):
+        if not remaining:
+            groups.append([])
+            stage_meta.append({
+                "layer": layer_idx,
+                "mode": mode,
+                "target_count": 0,
+                "selected_count": 0,
+                "weights_low_mid_high": [w_low, w_mid, w_high],
+            })
+            continue
+        target_count = max(1, int(round(float(ratio) * float(n))))
+        target_count = min(target_count, len(remaining))
+        ranked = sorted(
+            remaining,
+            key=lambda idx: (
+                w_low * lod_scores["low"][idx]
+                + w_mid * lod_scores["mid"][idx]
+                + w_high * lod_scores["high"][idx]
+            ),
+            reverse=True,
+        )
+        selected = ranked[:target_count]
+        for idx in selected:
+            remaining.discard(idx)
+        groups.append(selected)
+        stage_meta.append({
+            "layer": layer_idx,
+            "mode": mode,
+            "target_ratio_vs_full": float(ratio),
+            "target_count": int(target_count),
+            "selected_count": int(len(selected)),
+            "weights_low_mid_high": [float(w_low), float(w_mid), float(w_high)],
+        })
+
+    meta = {
+        "profile": "shin-lod",
+        "base_fraction": float(base_fraction),
+        "base_count": int(len(base_indices)),
+        "layer_keep_ratios": [float(r) for r in layer_ratios],
+        "layer_modes": list(layer_modes),
+        "stages": stage_meta,
+        "remaining_unassigned": int(len(remaining)),
+        "score_proxy": {
+            "base": "0.65*low + 0.25*mid + 0.10*high",
+            "low": "opacity * (large-scale + DC + low-order SH proxy)",
+            "mid": "opacity * (scale + DC + mid-order SH proxy)",
+            "high": "opacity * (inverse-scale + DC + high-order SH proxy)",
+        },
+    }
+    return groups, meta
+
+
+def make_manifest(args, layer_paths: Sequence[Path]) -> dict:
+    object_entry = {
+        "name": args.object_name,
+        "transform": {
+            "translation": [0.0, 0.0, 0.0],
+            "rotation": [0.0, 0.0, 0.0],
+            "scale": [1.0, 1.0, 1.0],
+        },
+        "layers": [],
+    }
+
+    if args.drm_system:
+        object_entry["drmPolicy"] = {
+            "system": args.drm_system,
+            "keyId": args.drm_key_id or "",
+            "key": args.drm_key or "",
+            "attributes": [x.strip() for x in args.drm_attributes.split(",") if x.strip()],
+        }
+
+    for layer_idx, path in enumerate(layer_paths):
+        layer_id = f"{args.object_name}_{'base' if layer_idx == 0 else 'e' + str(layer_idx)}"
+        layer = {
+            "id": layer_id,
+            "role": "base" if layer_idx == 0 else "enhancement",
+            "ply": str(path),
+            "dependsOn": [] if layer_idx == 0 else [f"{args.object_name}_base"],
+            "composition": "additive",
+        }
+        if layer_idx == 0:
+            layer["drmPolicy"] = None
+        object_entry["layers"].append(layer)
+
+    return {"objects": [object_entry]}
+
+
+def run_converter(args, manifest_path: Path):
+    converter = Path(args.converter)
+    if not converter.exists():
+        raise FileNotFoundError(f"Converter not found: {converter}")
+    output_glb = Path(args.output_glb) if args.output_glb else Path(args.out_dir) / f"{args.object_name}_static_layers.glb"
+    cmd = [str(converter), "--manifest", str(manifest_path), str(output_glb)]
+    if args.verbose:
+        cmd.append("--verbose")
+    print("Running:", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+    return output_glb
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input_ply", help="Input non-scalable INRIA-style GS PLY")
+    parser.add_argument("out_dir", help="Output directory for base/enhancement PLYs and manifest")
+    parser.add_argument("--object-name", default="object_0")
+    parser.add_argument("--profile", choices=["shin-lod", "heuristic-even"], default="shin-lod")
+    parser.add_argument("--base-fraction", type=float, default=0.25, help="SHIN Stage-A style base keep ratio")
+    parser.add_argument("--enhancement-layers", type=int, default=3, help="Used by --profile heuristic-even")
+    parser.add_argument("--layer-keep-ratios", default="0.03,0.02,0.01", help="SHIN-style enhancement ratios vs full input")
+    parser.add_argument("--layer-modes", default="lf,mix,hf", help="SHIN-style layer modes")
+    parser.add_argument("--layer-lmh-weights", default="", help="Optional rows low,mid,high;... overriding layer modes")
+    parser.add_argument("--drm-system", choices=["xor", "widevine", "playready"], default="")
+    parser.add_argument("--drm-key-id", default="")
+    parser.add_argument("--drm-key", default="")
+    parser.add_argument("--drm-attributes", default="sh,scale")
+    parser.add_argument("--converter", default="")
+    parser.add_argument("--convert-glb", action="store_true")
+    parser.add_argument("--output-glb", default="")
+    parser.add_argument("--verbose", action="store_true")
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    input_ply = Path(args.input_ply)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Reading {input_ply}")
+    table = read_ply(input_ply)
+    print(f"Loaded {table.vertex_count} splats with {len(table.properties)} properties")
+
+    if args.profile == "shin-lod":
+        groups, split_meta = split_indices_shin_lod(
+            table=table,
+            base_fraction=args.base_fraction,
+            layer_ratios=parse_float_csv(args.layer_keep_ratios),
+            layer_modes=parse_str_csv(args.layer_modes),
+            layer_lmh_weights=args.layer_lmh_weights,
+        )
+    else:
+        scores = compute_scores(table)
+        groups = split_indices(scores, args.base_fraction, args.enhancement_layers)
+        split_meta = {
+            "profile": "heuristic-even",
+            "base_fraction": float(args.base_fraction),
+            "enhancement_layers": int(args.enhancement_layers),
+        }
+
+    nonempty_groups = []
+    for layer_idx, indices in enumerate(groups):
+        if not indices:
+            if args.verbose:
+                print(f"Skipping empty layer index {layer_idx}")
+            continue
+        nonempty_groups.append(indices)
+
+    layer_paths = []
+    for layer_idx, indices in enumerate(nonempty_groups):
+        name = "base" if layer_idx == 0 else f"e{layer_idx}"
+        path = out_dir / f"{args.object_name}_{name}.ply"
+        count = write_binary_little_ply(path, table.properties, (table.rows[i] for i in indices))
+        layer_paths.append(path)
+        print(f"Wrote {name}: {count} splats -> {path}")
+
+    manifest = make_manifest(args, layer_paths)
+    manifest_path = out_dir / f"{args.object_name}_static_layers_manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    print(f"Wrote manifest -> {manifest_path}")
+
+    summary_path = out_dir / f"{args.object_name}_layerizer_summary.json"
+    summary = {
+        "input_ply": str(input_ply),
+        "output_dir": str(out_dir),
+        "input_splats": int(table.vertex_count),
+        "layers": [
+            {
+                "id": "base" if i == 0 else f"e{i}",
+                "ply": str(path),
+                "splats": int(len(nonempty_groups[i])),
+            }
+            for i, path in enumerate(layer_paths)
+        ],
+        **split_meta,
+    }
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"Wrote summary -> {summary_path}")
+
+    if args.convert_glb:
+        converter = args.converter
+        if not converter:
+            script_dir = Path(__file__).resolve().parents[1]
+            converter = script_dir / "ply2gltf_3m_multidrm" / "build" / "bin" / "ply2gltf_3m_multidrm"
+            args.converter = str(converter)
+        output_glb = run_converter(args, manifest_path)
+        print(f"Wrote GLB -> {output_glb}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,64 @@
+{
+  "objects": [
+    {
+      "name": "object_a",
+      "transform": {
+        "translation": [0.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "drmPolicy": {
+        "system": "widevine",
+        "keyId": "0123456789abcdef0123456789abcdef",
+        "key": "widevine_key_a",
+        "attributes": ["sh", "scale"]
+      },
+      "layers": [
+        {
+          "id": "object_a_base",
+          "role": "base",
+          "ply": "/path/to/object_a/base.ply",
+          "dependsOn": [],
+          "drmPolicy": null
+        },
+        {
+          "id": "object_a_e1",
+          "role": "enhancement",
+          "ply": "/path/to/object_a/e1.ply",
+          "dependsOn": ["object_a_base"],
+          "composition": "additive"
+        }
+      ]
+    },
+    {
+      "name": "object_b",
+      "transform": {
+        "translation": [1.0, 0.0, 0.0],
+        "rotation": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "drmPolicy": {
+        "system": "playready",
+        "keyId": "22222222222222222222222222222222",
+        "key": "playready_key_b",
+        "attributes": ["sh", "scale"]
+      },
+      "layers": [
+        {
+          "id": "object_b_base",
+          "role": "base",
+          "ply": "/path/to/object_b/base.ply",
+          "dependsOn": [],
+          "drmPolicy": null
+        },
+        {
+          "id": "object_b_e1",
+          "role": "enhancement",
+          "ply": "/path/to/object_b/e1.ply",
+          "dependsOn": ["object_b_base"],
+          "composition": "additive"
+        }
+      ]
+    }
+  ]
+}
