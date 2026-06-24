@@ -69,3 +69,11 @@ python3 scripts/scalable_ply_static/layerize_static_gs.py input.ply /tmp/static_
   --drm-key widevine_key_a \
   --convert-glb
 ```
+
+## Licensing
+
+This repository contains modified code and implementation work derived from
+MPEG 3D Renderer and MPEG PLY-to-glTF. See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and
+`scripts/ply2gltf_3m_multidrm/LICENSE.upstream` for upstream attribution,
+license terms, and bundled dependency notices.
