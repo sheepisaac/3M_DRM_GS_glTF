@@ -1,4 +1,4 @@
-# 3M DRM GS glTF
+# 3M DRM GS glTF: Gaussian Splats glTF Format for Multi-object Multi-layer Multi-DRM
 
 Research and implementation workspace for a glTF packaging format that supports:
 
